@@ -23,7 +23,7 @@ int ccState[numberOfButtons];
 int activeButtonState[numberOfButtons];
 
 const int analog_in_window_size = 500;
-const int analog_in_delta_t_us = 10;
+const int analog_in_delta_t_us = 5;
 int avg_index = 0;
 
 float analog_in1 = 0;
