@@ -144,6 +144,7 @@ void loop() {
     analog_in1 += (1.0 / analog_in_window_size) * (float)analogRead(A10);
     analog_in2 += (1.0 / analog_in_window_size) * (float)analogRead(A11);
 
+    /* SCALE LED BRIGHTNESS BY RANDOM SAMPLING AND COMPARING WITH CC VALUE */
     for (int led = 0; led < numberOfButtons; ++led) {
       if (random(0,127) < ccState[led] || lastButtonState[led] == activeButtonState[led]) {
         digitalWrite(ledPinBase + led, HIGH);
@@ -159,14 +160,14 @@ void loop() {
 
   if (abs(analog_in1_old - analog_in1) > analog_in_thresh) {
     // Serial.print((127.0/an_max)*an1); Serial.write("\t "); Serial.print((127.0/an_max)*an2); Serial.write("\n");
-    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 0), min(127, floor((127.0/an_max)*analog_in1))};
+    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 0), numberOfButtons, min(127, floor((127.0/an_max)*analog_in1))};
     MidiUSB.sendMIDI(packet);
     analog_in1_old = analog_in1;
   }
   
   if (abs(analog_in2_old - analog_in2) > analog_in_thresh) {
     // Serial.print((127.0/an_max)*an1); Serial.write("\t "); Serial.print((127.0/an_max)*an2); Serial.write("\n");
-    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 1), min(127, floor((127.0/an_max)*analog_in2))};
+    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 1), numberOfButtons+1, min(127, floor((127.0/an_max)*analog_in2))};
     MidiUSB.sendMIDI(packet);
     analog_in2_old = analog_in2;
   }
