@@ -8,15 +8,12 @@ const uint8_t numberOfButtons = 10;
 // LEDs
 const int ledPinBase = 14;
 
-// Touch INs
-const int touchInPinBase = 10;
-const uint8_t numberOfTouch = 2;
-
 // An array of ints to remember the button states from the last loop
 // so we can detect state transitions
 int lastButtonState[numberOfButtons];
 
-int ccState[numberOfButtons];
+int isButtonMomentary[numberOfButtons];
+int ledState[numberOfButtons];
 
 // The "active" state is the pressed down state. This
 // might be different for different buttons..
@@ -48,14 +45,20 @@ void setup()
   {
     pinMode(buttonPinBase + button, INPUT_PULLUP);
     lastButtonState[button] = LOW;
-
     activeButtonState[button] = LOW;
+
+    if (button < 5 && button > 2) {
+      isButtonMomentary[button] = true;
+    } else {
+      isButtonMomentary[button] = false;
+    }
+    
+    ledState[button] = 0;
+    pinMode(ledPinBase + button, OUTPUT);
   }
 
   for (int led = 0; led < numberOfButtons; ++led)
   {
-    ccState[led] = LOW;
-    pinMode(ledPinBase + led, OUTPUT);
   }
 
   for (int index = 0; index < 3; ++index)
@@ -84,7 +87,7 @@ void loop() {
   do {
     in_packet = MidiUSB.read();
     if (in_packet.header == 0x0B) {
-      int channel = in_packet.byte1 & 0x7F;
+      // int channel = in_packet.byte1 & 0x7F;
       int controller = in_packet.byte2;
 
       if (controller > numberOfButtons) {
@@ -94,9 +97,9 @@ void loop() {
       int value = in_packet.byte3;
 
       if (value != 0) {
-        ccState[controller] = value;
+        ledState[controller] = value;
       } else {
-        ccState[controller] = value;
+        ledState[controller] = value;
       }
     }
   } while (in_packet.header != 0);
@@ -106,29 +109,37 @@ void loop() {
   /* PROCESS BUTTONS */
   for (int button = 0; button < numberOfButtons; ++button)
   {
-    if (ccState[button] != 0) {
-      // digitalWrite(ledPinBase + button, HIGH);
-    } else {
-      // digitalWrite(ledPinBase + button, LOW);
-    }
-    
     int state = digitalRead(buttonPinBase + button);
 
-    // Detect state transitions    
-    if (state != lastButtonState[button]) 
-    {
-      // Going from low to high (on push)
-      if (state == activeButtonState[button]) 
+    if (isButtonMomentary[button]) {
+      if (state != lastButtonState[button]) 
       {
-        midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 127};
-        MidiUSB.sendMIDI(packet);
-        // digitalWrite(ledPinBase + button, HIGH);
+        if (state == activeButtonState[button]) 
+        {
+          midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 127};
+          MidiUSB.sendMIDI(packet);
+          ledState[button] = 127;
+        } else {
+          midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 0};
+          MidiUSB.sendMIDI(packet);
+          ledState[button] = 0;
+        }
       }
-      else
+    } else { // isButtonMomentary == false
+      if (state != lastButtonState[button]) 
       {
-        midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 0};
-        MidiUSB.sendMIDI(packet);
-        // digitalWrite(ledPinBase + button, LOW);
+        if (state == activeButtonState[button]) 
+        {
+          if (ledState[button] == 0) {
+            midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 127};
+            MidiUSB.sendMIDI(packet);
+            ledState[button] = 127;
+          } else {
+            midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 0};
+            MidiUSB.sendMIDI(packet);
+            ledState[button] = 0;
+          }
+        }
       }
     }
 
@@ -146,7 +157,7 @@ void loop() {
 
     /* SCALE LED BRIGHTNESS BY RANDOM SAMPLING AND COMPARING WITH CC VALUE */
     for (int led = 0; led < numberOfButtons; ++led) {
-      if (random(0,127) < ccState[led] || lastButtonState[led] == activeButtonState[led]) {
+      if (random(0,127) < ledState[led] || lastButtonState[led] == activeButtonState[led]) {
         digitalWrite(ledPinBase + led, HIGH);
       } else {
         digitalWrite(ledPinBase + led, LOW);
@@ -160,14 +171,14 @@ void loop() {
 
   if (abs(analog_in1_old - analog_in1) > analog_in_thresh) {
     // Serial.print((127.0/an_max)*an1); Serial.write("\t "); Serial.print((127.0/an_max)*an2); Serial.write("\n");
-    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 0), numberOfButtons, min(127, floor((127.0/an_max)*analog_in1))};
+    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 0), numberOfButtons, min((uint8_t)127, (uint8_t)floor((127.0/an_max)*analog_in1))};
     MidiUSB.sendMIDI(packet);
     analog_in1_old = analog_in1;
   }
   
   if (abs(analog_in2_old - analog_in2) > analog_in_thresh) {
     // Serial.print((127.0/an_max)*an1); Serial.write("\t "); Serial.print((127.0/an_max)*an2); Serial.write("\n");
-    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 1), numberOfButtons+1, min(127, floor((127.0/an_max)*analog_in2))};
+    midiEventPacket_t packet = {0x0B, (uint8_t)(0xB0 | 1), numberOfButtons+1, min((uint8_t)127, (uint8_t)floor((127.0/an_max)*analog_in2))};
     MidiUSB.sendMIDI(packet);
     analog_in2_old = analog_in2;
   }
