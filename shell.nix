@@ -12,7 +12,7 @@
       glib
       pango
       cairo
-      gdk_pixbuf
+      gdk-pixbuf
     ]) ++ (with pkgs.xorg;
     [ libX11
       libXcursor
