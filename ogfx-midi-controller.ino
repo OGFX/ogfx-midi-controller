@@ -1,23 +1,25 @@
 #include <MIDIUSB.h>
+#include <EEPROM.h>
 
-
-// The first pin of consecutive pins to attach our switches to
-const int buttonPinBase = 2;
 const uint8_t numberOfButtons = 10;
 
-// LEDs
-const int ledPinBase = 14;
+const int buttonPins[]      = {  2,  3,   4,  5,   6,  7,   8,  9,  10, 11 };
+const int ledPins[]         = { 14, 15,  16, 17,  18, 19,  20, 21,  22, 23 };
+uint8_t isButtonMomentary[] = {  0,  0,   0,  0,   0,  0,   0,  0,   0,  0 };
+
+// The "active" state is the pressed down state. This
+// might be different for different buttons..
+const int activeButtonState[] = { LOW, LOW,  LOW, LOW,  LOW, LOW,  LOW, LOW,  LOW, LOW };
+
+// EEPROM magic number
+const uint64_t magic = 0xdeadbeef;
+
+enum { NORMAL = 0, PROGRAMMING_MOMENTARY } mode;
 
 // An array of ints to remember the button states from the last loop
 // so we can detect state transitions
 int lastButtonState[numberOfButtons];
-
-int isButtonMomentary[numberOfButtons];
-int ledState[numberOfButtons];
-
-// The "active" state is the pressed down state. This
-// might be different for different buttons..
-int activeButtonState[numberOfButtons];
+int buttonState[numberOfButtons];
 
 const int analog_in_window_size = 500;
 const int analog_in_delta_t_us = 5;
@@ -36,25 +38,44 @@ const float t0 = 0.1;
 const float an_max = 560.0;
 const float an_min = 0.1;
 
+void saveSetup()
+{
+  EEPROM.put(0, magic);
+  for (int button = 0; button < numberOfButtons; ++button)
+  {
+    EEPROM.put(8 + button, (uint8_t)0);
+  }
+}
+
 void setup() 
 {
   Serial.begin(9600);
+
+  mode = NORMAL;
+  
+  // Check for magic number in EEPROM
+  long long f;
+  EEPROM.get(0, f);
+  if (f != magic)
+  {
+    saveSetup();
+  }
+  
+  for (int button = 0; button < numberOfButtons; ++button)
+  {
+    int value = EEPROM.read(8 + button);
+    isButtonMomentary[button] = value;
+  }
+  
   // We use INPUT_PULLUP to use the included pullup resistors 
   // in the microcontroller
   for (int button = 0; button < numberOfButtons; ++button)
   {
-    pinMode(buttonPinBase + button, INPUT_PULLUP);
+    pinMode(buttonPins[button], INPUT_PULLUP);
     lastButtonState[button] = LOW;
-    activeButtonState[button] = LOW;
-
-    if (button < 5 && button > 2) {
-      isButtonMomentary[button] = true;
-    } else {
-      isButtonMomentary[button] = false;
-    }
     
-    ledState[button] = 0;
-    pinMode(ledPinBase + button, OUTPUT);
+    buttonState[button] = 0;
+    pinMode(ledPins[button], OUTPUT);
   }
 
   for (int led = 0; led < numberOfButtons; ++led)
@@ -65,13 +86,13 @@ void setup()
   {
     for (int button = 0; button < numberOfButtons; ++button)
     {
-      digitalWrite(ledPinBase + button, HIGH);
+      digitalWrite(ledPins[button], HIGH);
       delay(50);
     }
     
     for (int button = 0; button < numberOfButtons; ++button)
     {
-      digitalWrite(ledPinBase + button, LOW);
+      digitalWrite(ledPins[button], LOW);
       delay(50);
     }
   }
@@ -97,9 +118,9 @@ void loop() {
       int value = in_packet.byte3;
 
       if (value != 0) {
-        ledState[controller] = value;
+        buttonState[controller] = value;
       } else {
-        ledState[controller] = value;
+        buttonState[controller] = value;
       }
     }
   } while (in_packet.header != 0);
@@ -109,7 +130,7 @@ void loop() {
   /* PROCESS BUTTONS */
   for (int button = 0; button < numberOfButtons; ++button)
   {
-    int state = digitalRead(buttonPinBase + button);
+    int state = digitalRead(buttonPins[button]);
 
     if (isButtonMomentary[button]) {
       if (state != lastButtonState[button]) 
@@ -118,11 +139,11 @@ void loop() {
         {
           midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 127};
           MidiUSB.sendMIDI(packet);
-          ledState[button] = 127;
+          buttonState[button] = 127;
         } else {
           midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 0};
           MidiUSB.sendMIDI(packet);
-          ledState[button] = 0;
+          buttonState[button] = 0;
         }
       }
     } else { // isButtonMomentary == false
@@ -130,14 +151,14 @@ void loop() {
       {
         if (state == activeButtonState[button]) 
         {
-          if (ledState[button] == 0) {
+          if (buttonState[button] == 0) {
             midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 127};
             MidiUSB.sendMIDI(packet);
-            ledState[button] = 127;
+            buttonState[button] = 127;
           } else {
             midiEventPacket_t packet = {0x0B, 0xB0, (uint8_t)button, 0};
             MidiUSB.sendMIDI(packet);
-            ledState[button] = 0;
+            buttonState[button] = 0;
           }
         }
       }
@@ -145,6 +166,21 @@ void loop() {
 
     // Store away the current state for the transition detection
     lastButtonState[button] = state;
+  }
+
+  if (buttonState[0] != 0 && buttonState[9] != 0 && mode == NORMAL) {
+    mode = PROGRAMMING_MOMENTARY;
+  }
+
+  if (mode == PROGRAMMING_MOMENTARY) {
+    for (int button = 0; button < numberOfButtons; ++button)
+    {
+      if (buttonState[button] != 0)
+      {
+        isButtonMomentary[button] = !isButtonMomentary[button];
+        mode = NORMAL;
+      }
+    }
   }
 
   /* READ EXPRESSION PEDALS AND FADE LEDS */
@@ -156,11 +192,11 @@ void loop() {
     analog_in2 += (1.0 / analog_in_window_size) * (float)analogRead(A11);
 
     /* SCALE LED BRIGHTNESS BY RANDOM SAMPLING AND COMPARING WITH CC VALUE */
-    for (int led = 0; led < numberOfButtons; ++led) {
-      if (random(0,127) < ledState[led] || lastButtonState[led] == activeButtonState[led]) {
-        digitalWrite(ledPinBase + led, HIGH);
+    for (int button = 0; button < numberOfButtons; ++button) {
+      if (random(0,127) < buttonState[button] || lastButtonState[button] == activeButtonState[button]) {
+        digitalWrite(ledPins[button], HIGH);
       } else {
-        digitalWrite(ledPinBase + led, LOW);
+        digitalWrite(ledPins[button], LOW);
       }
     }
     
