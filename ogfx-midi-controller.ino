@@ -43,7 +43,26 @@ void saveSetup()
   EEPROM.put(0, magic);
   for (int button = 0; button < numberOfButtons; ++button)
   {
-    EEPROM.put(8 + button, (uint8_t)0);
+    EEPROM.put(8 + button, isButtonMomentary[button]);
+  }
+}
+
+void blinkenlights(int amount)
+{
+  const int delayTime = 25;
+  for (int index = 0; index < amount; ++index)
+  {
+    for (int button = 0; button < numberOfButtons; ++button)
+    {
+      digitalWrite(ledPins[button], HIGH);
+      delay(delayTime);
+    }
+    
+    for (int button = 0; button < numberOfButtons; ++button)
+    {
+      digitalWrite(ledPins[button], LOW);
+      delay(delayTime);
+    }
   }
 }
 
@@ -78,25 +97,7 @@ void setup()
     pinMode(ledPins[button], OUTPUT);
   }
 
-  for (int led = 0; led < numberOfButtons; ++led)
-  {
-  }
-
-  for (int index = 0; index < 3; ++index)
-  {
-    for (int button = 0; button < numberOfButtons; ++button)
-    {
-      digitalWrite(ledPins[button], HIGH);
-      delay(50);
-    }
-    
-    for (int button = 0; button < numberOfButtons; ++button)
-    {
-      digitalWrite(ledPins[button], LOW);
-      delay(50);
-    }
-  }
-  
+  blinkenlights(3);
   pinMode(A10, INPUT);
   pinMode(A11, INPUT);
 }
@@ -168,8 +169,13 @@ void loop() {
     lastButtonState[button] = state;
   }
 
-  if (buttonState[0] != 0 && buttonState[9] != 0 && mode == NORMAL) {
+  if (buttonState[0] != 0 && buttonState[5] != 0 && mode == NORMAL) {
+    for (int button = 0; button < numberOfButtons; ++button)
+    {
+      buttonState[button] = 0;
+    }
     mode = PROGRAMMING_MOMENTARY;
+    blinkenlights(2);
   }
 
   if (mode == PROGRAMMING_MOMENTARY) {
@@ -178,7 +184,9 @@ void loop() {
       if (buttonState[button] != 0)
       {
         isButtonMomentary[button] = !isButtonMomentary[button];
+        saveSetup();
         mode = NORMAL;
+        blinkenlights(1);
       }
     }
   }
